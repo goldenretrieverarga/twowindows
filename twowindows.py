@@ -9,14 +9,24 @@ class Paginator:
         self.lst = []
         self.position = 0
         self.max_lines, self.max_cols = self.win.getmaxyx()
+        self.max_lines -= 1
+        self.page = 0
         Paginator.paginators.append(self)
+    
+    def get_page(self):
+        begin = self.page * self.max_lines
+        return self.lst[begin:begin+self.max_lines]
+    
+    def get_selected(self):
+        begin = self.page *self.max_lines
+        return self.lst[begin+self.position]
         
     def set_list(self,lst):
         self.lst = lst
     def draw(self):
         self.win.clear()
         self.win.box("*","*")
-        for i,line in enumerate(self.lst[:self.max_cols-1]):
+        for i,line in enumerate(self.get_page()):
             
             if i == self.position:
                 self.win.addstr(i+1,0,line,curses.color_pair(1))
@@ -25,11 +35,18 @@ class Paginator:
                 
     def process_key(self,key):
         if key == "KEY_DOWN":
-            if self.position < len(self.lst):
+            if self.position < self.max_lines:
                 self.position += 1
+            else:
+                self.page += 1
+                self.position = 0
         if key == "KEY_UP":
             if self.position > 0:
-                self.position -= 1            
+                self.position -= 1
+            else:
+                if self.page > 0:
+                    self.page -= 1
+                    self.position = self.max_lines-1                        
     
 class DirectoryListing(Paginator):
     def __init__(self,win,dest,dir):
@@ -40,20 +57,22 @@ class DirectoryListing(Paginator):
     def process_key(self,key):
         super().process_key(key)
         if key == "KEY_RIGHT":
-            fullpath = os.path.join(self.dir,self.lst[self.position])
+            fullpath = os.path.join(self.dir,self.get_selected())
             if os.path.isfile(fullpath):
                 self.dest.fullpathlst.append(fullpath)
                 self.dest.set_lst()
         if key == "\n" or key == "\r":
-            path = os.path.join(self.dir,self.lst[self.position])
+            path = os.path.join(self.dir,self.get_selected())
             if os.path.isdir(path):
                 self.dir = path
                 self.set_list(os.listdir(self.dir))
                 self.position = 0
+                self.page = 0
         if key == "\b":
             path = Path(self.dir)
             self.dir = path.parent.absolute()
             self.position = 0
+            self.page = 0
             self.set_list(os.listdir(self.dir))
             #self.win.addstr(1,0,"current dir: " + str(self.dir))
             
