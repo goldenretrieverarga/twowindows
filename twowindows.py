@@ -13,12 +13,16 @@ class Paginator:
         self.page = 0
         Paginator.paginators.append(self)
     
+    def get_nlines(self):
+        y,x = self.win.getmaxyx()
+        return y - 2
+
     def get_page(self):
-        begin = self.page * self.max_lines
-        return self.lst[begin:begin+self.max_lines]
+        begin = self.page * self.get_nlines();
+        return self.lst[begin:begin  + self.get_nlines()]
     
     def get_selected(self):
-        begin = self.page *self.max_lines
+        begin = self.page *  self.get_nlines()
         return self.lst[begin+self.position]
         
     def set_list(self,lst):
@@ -35,18 +39,19 @@ class Paginator:
                 
     def process_key(self,key):
         if key == "KEY_DOWN":
-            if self.position < self.max_lines:
-                self.position += 1
-            else:
-                self.page += 1
-                self.position = 0
+           # if self.position < self.max_lines:
+           if self.position < self.get_nlines() -1:
+               self.position += 1
+           else:
+               self.page += 1
+               self.position = 0
         if key == "KEY_UP":
             if self.position > 0:
                 self.position -= 1
             else:
                 if self.page > 0:
                     self.page -= 1
-                    self.position = self.max_lines-1                        
+                    self.position = self.get_nlines() -1                       
     
 class DirectoryListing(Paginator):
     def __init__(self,win,dest,dir):
@@ -54,6 +59,20 @@ class DirectoryListing(Paginator):
         self.dest = dest
         self.dir = dir
         self.set_list(os.listdir(self.dir))
+    
+    def draw(self):
+        self.win.clear()
+        self.win.box("*","*")
+        for i,line in enumerate(self.get_page()):
+            print("number of line" + str(i))
+            if i == self.position:
+                self.win.addstr(i+1,0,line,curses.color_pair(1))
+            else:
+                fullpath = os.path.join(self.dir,line)
+                if os.path.isdir(fullpath):
+                    self.win.addstr(i+1,0,line,curses.color_pair(2))
+                else:
+                    self.win.addstr(i+1,0,line)
     def process_key(self,key):
         super().process_key(key)
         if key == "KEY_RIGHT":
@@ -122,20 +141,22 @@ class CommandLine:
     def __init__(self,screen):
         self.y = curses.LINES-1
         self.screen = screen
+    def get_y(self):
+        return curses.LINES-1
     def set_source(self,source):
         self.source = source
     def print(self,string):
-        self.screen.move(self.y,0)
+        self.screen.move(self.get_y(),0)
         self.screen.clrtoeol()
         self.screen.addstr(string)       
     def parse_command(self):
-        self.screen.move(self.y,0)
+        self.screen.move(self.get_y(),0)
         self.screen.clrtoeol()
         curses.echo()
-        command = self.screen.getstr(self.y,0).decode(encoding="utf-8")
+        command = self.screen.getstr(self.get_y(),0).decode(encoding="utf-8")
         commandandarg = command.split(" ")
         if commandandarg[0] == "w":
-            self.print("Write command enterd")
+            self.print("Write command entered")
             
             if len(commandandarg) == 2:
                 f = open(commandandarg[1],"w")
@@ -146,7 +167,7 @@ class CommandLine:
 def main(stdscr):
     
     curses.init_pair(1,curses.COLOR_YELLOW,curses.COLOR_BLUE)
-    
+    curses.init_pair(2,curses.COLOR_GREEN,curses.COLOR_BLACK) 
     win1 = curses.newwin(curses.LINES-1,curses.COLS // 2,0,0)
     win2 = curses.newwin(curses.LINES-1,curses.COLS //2,0,curses.COLS//2)
     
@@ -154,7 +175,7 @@ def main(stdscr):
     win1.box('*','*')
     win2.box('|','|')
     pag2 = ListComposer(win2)
-    pag1 = DirectoryListing(win1,pag2,"/home/nick/Music")
+    pag1 = DirectoryListing(win1,pag2,Path.cwd())
     pag2.set_source(pag1)
     cl = CommandLine(stdscr)
     cl.set_source(pag2)
@@ -175,6 +196,7 @@ def main(stdscr):
         if key == " ":
             selected = elements[(elements.index(selected)+1) % 3]
             cl.print("tab detected")
+            cl.print(" %s" % pag1.dir)
             
         
         """""
