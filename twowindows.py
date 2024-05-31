@@ -30,12 +30,12 @@ class Paginator:
     def draw(self):
         self.win.clear()
         self.win.box("*","*")
+        _, max_x = self.win.getmaxyx()
         for i,line in enumerate(self.get_page()):
-            
             if i == self.position:
-                self.win.addstr(i+1,0,line,curses.color_pair(1))
+                self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
             else:
-                self.win.addstr(i+1,0,line)
+                self.win.addstr(i+1,0,line[:max_x])
                 
     def process_key(self,key):
         if key == "KEY_DOWN":
@@ -63,16 +63,17 @@ class DirectoryListing(Paginator):
     def draw(self):
         self.win.clear()
         self.win.box("*","*")
+        _, max_x = self.win.getmaxyx()
         for i,line in enumerate(self.get_page()):
             print("number of line" + str(i))
             if i == self.position:
-                self.win.addstr(i+1,0,line,curses.color_pair(1))
+                self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
             else:
                 fullpath = os.path.join(self.dir,line)
                 if os.path.isdir(fullpath):
-                    self.win.addstr(i+1,0,line,curses.color_pair(2))
+                    self.win.addstr(i+1,0,line[:max_x],curses.color_pair(2))
                 else:
-                    self.win.addstr(i+1,0,line)
+                    self.win.addstr(i+1,0,line[:max_x])
     def process_key(self,key):
         super().process_key(key)
         if key == "KEY_RIGHT":
