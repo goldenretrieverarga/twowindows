@@ -1,5 +1,6 @@
 import curses
 import os 
+import random
 from pathlib import Path
 class Paginator:
     paginators = []
@@ -36,7 +37,8 @@ class Paginator:
                 self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
             else:
                 self.win.addstr(i+1,0,line[:max_x])
-                
+    def get_abs_pos(self):
+        return self.page * self.get_nlines() + self.position
     def process_key(self,key):
         if key == "KEY_DOWN":
            # if self.position < self.max_lines:
@@ -59,6 +61,7 @@ class DirectoryListing(Paginator):
         self.dest = dest
         self.dir = dir
         self.set_list(os.listdir(self.dir))
+        self.pos_stack = [] 
     
     def draw(self):
         self.win.clear()
@@ -76,6 +79,25 @@ class DirectoryListing(Paginator):
                     self.win.addstr(i+1,0,line[:max_x])
     def process_key(self,key):
         super().process_key(key)
+        if key == "s":
+            fullpath = os.path.join(self.dir,self.get_selected())
+            if fullpath.endswith(".m3u"):
+                os.rename(fullpath,fullpath+".old")
+            elif fullpath.endswith(".m3u.old"):
+                os.rename(fullpath,fullpath.removesuffix(".old"))
+            self.set_list(os.listdir(self.dir))
+        if key == "l":
+            fullpath = os.path.join(self.dir,self.get_selected())
+            if os.path.isfile(fullpath) and fullpath.endswith(".m3u"):
+                f = open(fullpath,"r")
+                self.dest.fullpathlst = []
+                for line in f:
+                    musicfilepath = os.path.join(self.dir,line)
+                    self.dest.fullpathlst.append(musicfilepath)
+                self.dest.set_lst()
+
+
+
         if key == "KEY_RIGHT":
             fullpath = os.path.join(self.dir,self.get_selected())
             if os.path.isfile(fullpath):
@@ -84,6 +106,7 @@ class DirectoryListing(Paginator):
         if key == "\n" or key == "\r":
             path = os.path.join(self.dir,self.get_selected())
             if os.path.isdir(path):
+                self.pos_stack.append(self.page * self.get_nlines() + self.position)
                 self.dir = path
                 self.set_list(os.listdir(self.dir))
                 self.position = 0
@@ -91,11 +114,29 @@ class DirectoryListing(Paginator):
         if key == "\b":
             path = Path(self.dir)
             self.dir = path.parent.absolute()
-            self.position = 0
-            self.page = 0
+            if len(self.pos_stack) >  0:
+                position = self.pos_stack.pop()
+                self.position = position % self.get_nlines()
+                self.page = self.position // self.get_nlines()
+            else:
+                self.position = 0
+                self.page = 0
             self.set_list(os.listdir(self.dir))
             #self.win.addstr(1,0,"current dir: " + str(self.dir))
-            
+    def draw(self):
+        self.win.clear()
+        self.win.box("*","*")
+        _, max_x = self.win.getmaxyx()
+        for i,line in enumerate(self.get_page()):
+            print("number of line" + str(i))
+            if i == self.position:
+                self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
+            else:
+                fullpath = os.path.join(self.dir,line)
+                if os.path.isdir(fullpath):
+                    self.win.addstr(i+1,0,line[:max_x],curses.color_pair(2))
+                else:
+                    self.win.addstr(i+1,0,line[:max_x])
 
 class ListComposer(Paginator):
     def __init__(self,win):
@@ -133,6 +174,21 @@ class ListComposer(Paginator):
             self.view = "base"
         if key == "a":
             self.view = "absolute"
+        if key == "x":
+            del self.fullpathlst[self.page * self.get_nlines() + self.position]
+            self.draw()
+        if key == "s":
+            random.shuffle(self.fullpathlst)
+        if key == "u":
+            pos = self.get_abs_pos()
+            if pos > 0:
+                self.fullpathlst[pos-1],self.fullpathlst[pos]=self.fullpathlst[pos],self.fullpathlst[pos-1]
+                self.position -= 1
+        if key == "d":
+            pos = self.get_abs_pos()
+            if pos < len(self.fullpathlst) -1:
+                self.fullpathlst[pos+1],self.fullpathlst[pos]=self.fullpathlst[pos],self.fullpathlst[pos+1]
+                self.position += 1
         self.set_lst()
             
             
@@ -165,6 +221,9 @@ class CommandLine:
                     line = line.replace("/","\\")
                     f.write("%s\r\n" % line)
                 f.close()
+        if commandandarg[0] == "q":
+            curses.endwin()
+            exit(0)
 def main(stdscr):
     
     curses.init_pair(1,curses.COLOR_YELLOW,curses.COLOR_BLUE)
@@ -194,6 +253,9 @@ def main(stdscr):
         
         #cl.print("key: " + key)
         key = stdscr.getkey()
+       # if key == "q":
+        #    curses.endwin()
+         #   exit(0)
         if key == " ":
             selected = elements[(elements.index(selected)+1) % 3]
             cl.print("tab detected")
