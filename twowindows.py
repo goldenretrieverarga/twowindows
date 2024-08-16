@@ -13,6 +13,7 @@ class Paginator:
         self.max_lines -= 1
         self.page = 0
         Paginator.paginators.append(self)
+        self.focused = False
     
     def get_nlines(self):
         y,x = self.win.getmaxyx()
@@ -25,18 +26,13 @@ class Paginator:
     def get_selected(self):
         begin = self.page *  self.get_nlines()
         return self.lst[begin+self.position]
+
         
     def set_list(self,lst):
-        self.lst = lst
+        if lst is not None:
+            self.lst = lst
     def draw(self):
-        self.win.clear()
-        self.win.box("*","*")
-        _, max_x = self.win.getmaxyx()
-        for i,line in enumerate(self.get_page()):
-            if i == self.position:
-                self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
-            else:
-                self.win.addstr(i+1,0,line[:max_x])
+        pass
     def get_abs_pos(self):
         return self.page * self.get_nlines() + self.position
     def process_key(self,key):
@@ -55,74 +51,113 @@ class Paginator:
                     self.page -= 1
                     self.position = self.get_nlines() -1                       
     
+
+
+def get_all_music_files(direc):
+    res = []
+    for file in os.listdir(direc):
+        fullpath = os.path.join(direc,file)
+        #print(fullpath)
+        if os.path.isdir(fullpath) and os.access(fullpath,os.R_OK):
+            res += get_all_music_files(fullpath)
+        elif os.path.isfile(fullpath):
+            _,ext = os.path.splitext(fullpath)
+            if ext in [".mp3",".m4a"]:
+                res.append(fullpath)
+
+    return res
+
 class DirectoryListing(Paginator):
     def __init__(self,win,dest,dir):
         super().__init__(win)
         self.dest = dest
         self.dir = dir
         self.set_list(os.listdir(self.dir))
-        self.pos_stack = [] 
-    
-    def draw(self):
-        self.win.clear()
-        self.win.box("*","*")
-        _, max_x = self.win.getmaxyx()
-        for i,line in enumerate(self.get_page()):
-            print("number of line" + str(i))
-            if i == self.position:
-                self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
-            else:
-                fullpath = os.path.join(self.dir,line)
-                if os.path.isdir(fullpath):
-                    self.win.addstr(i+1,0,line[:max_x],curses.color_pair(2))
-                else:
-                    self.win.addstr(i+1,0,line[:max_x])
+        self.full_path_list = []
+        self.pos_stack = []
+        self.modus = "d"
+        self.refresh = True
+
+    def get_selected_full_path(self):
+        begin = self.page * self.get_nlines()
+        return self.full_path_list[begin + self.position]
+
+
+
     def process_key(self,key):
         super().process_key(key)
-        if key == "s":
-            fullpath = os.path.join(self.dir,self.get_selected())
-            if fullpath.endswith(".m3u"):
-                os.rename(fullpath,fullpath+".old")
-            elif fullpath.endswith(".m3u.old"):
-                os.rename(fullpath,fullpath.removesuffix(".old"))
-            self.set_list(os.listdir(self.dir))
-        if key == "l":
-            fullpath = os.path.join(self.dir,self.get_selected())
-            if os.path.isfile(fullpath) and fullpath.endswith(".m3u"):
-                f = open(fullpath,"r")
-                self.dest.fullpathlst = []
-                for line in f:
-                    musicfilepath = os.path.join(self.dir,line)
-                    self.dest.fullpathlst.append(musicfilepath)
-                self.dest.set_lst()
-
-
-
-        if key == "KEY_RIGHT":
-            fullpath = os.path.join(self.dir,self.get_selected())
-            if os.path.isfile(fullpath):
-                self.dest.fullpathlst.append(fullpath)
-                self.dest.set_lst()
-        if key == "\n" or key == "\r":
-            path = os.path.join(self.dir,self.get_selected())
-            if os.path.isdir(path):
-                self.pos_stack.append(self.page * self.get_nlines() + self.position)
-                self.dir = path
-                self.set_list(os.listdir(self.dir))
-                self.position = 0
-                self.page = 0
-        if key == "\b":
-            path = Path(self.dir)
-            self.dir = path.parent.absolute()
-            if len(self.pos_stack) >  0:
-                position = self.pos_stack.pop()
-                self.position = position % self.get_nlines()
-                self.page = self.position // self.get_nlines()
+        if key == "m":
+            if self.modus == "a":
+                self.modus = "d"
+                self.refresh = True
             else:
-                self.position = 0
-                self.page = 0
-            self.set_list(os.listdir(self.dir))
-            #self.win.addstr(1,0,"current dir: " + str(self.dir))
+                self.modus = "a"
+                self.refresh = True
+        
+
+        if self.modus == "a":
+            if self.refresh:
+                self.full_path_list = get_all_music_files(self.dir)
+                self.set_list([os.path.basename(p) for p in self.full_path_list])
+                self.refresh = False
+                if self.telex and self.focused:
+                    self.telex.print(str(len(self.lst)))
+                print(len(self.lst))
+            if key == "KEY_RIGHT":
+                self.dest.fullpathlst.append(self.get_selected_full_path())
+                self.dest.set_lst()
+
+        
+        if self.modus == "d":
+            if self.refresh:
+                self.set_list(os.listdir(self.dir))
+                self.refresh = False
+            if key == "s":
+                fullpath = os.path.join(self.dir,self.get_selected())
+                if fullpath.endswith(".m3u"):
+                    os.rename(fullpath,fullpath+".old")
+                elif fullpath.endswith(".m3u.old"):
+                    os.rename(fullpath,fullpath.removesuffix(".old"))
+                self.set_list(os.listdir(self.dir))
+            if key == "l" or key == "a":
+                fullpath = os.path.join(self.dir,self.get_selected())
+                if os.path.isfile(fullpath) and fullpath.endswith(".m3u"):
+                    f = open(fullpath,"r")
+                    if key == "l":
+                        self.dest.fullpathlst = []
+                    for line in f:
+                        line = line.strip()
+                        musicfilepath = os.path.join(self.dir,line)
+                        self.dest.fullpathlst.append(musicfilepath)
+                    self.dest.set_lst()
+            if key == "KEY_RIGHT":
+                fullpath = os.path.join(self.dir,self.get_selected())
+                if os.path.isfile(fullpath):
+                    self.dest.fullpathlst.append(fullpath)
+                    self.dest.set_lst()
+            if key == "\n" or key == "\r":
+                path = os.path.join(self.dir,self.get_selected())
+                if os.path.isdir(path):
+                    self.pos_stack.append(self.page * self.get_nlines() + self.position)
+                    self.dir = path
+                    self.set_list(os.listdir(self.dir))
+                    self.position = 0
+                    self.page = 0
+            if key == "\b" or key == "KEY_BACKSPACE":
+                path = Path(self.dir)
+                self.dir = path.parent.absolute()
+                if len(self.pos_stack) >  0:
+                    position = self.pos_stack.pop()
+                    self.position = position % self.get_nlines()
+                    self.page = position // self.get_nlines()
+                else:
+                    self.position = 0
+                    self.page = 0
+                self.set_list(os.listdir(self.dir))
+                #self.win.addstr(1,0,"current dir: " + str(self.dir))
+
+
+
     def draw(self):
         self.win.clear()
         self.win.box("*","*")
@@ -131,6 +166,8 @@ class DirectoryListing(Paginator):
             print("number of line" + str(i))
             if i == self.position:
                 self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
+                if self.telex and self.focused:
+                    self.telex.print(line)
             else:
                 fullpath = os.path.join(self.dir,line)
                 if os.path.isdir(fullpath):
@@ -155,7 +192,18 @@ class ListComposer(Paginator):
         elif self.view == "absolute":
             self.lst = self.fullpathlst
     def draw(self):
-        super().draw()
+        
+        self.win.clear()
+        self.win.box("*", "*")
+        _, max_x = self.win.getmaxyx()
+        self.win.addstr(0,max_x-3,str(len(self.fullpathlst)),curses.color_pair(3))
+        for i,line in enumerate(self.get_page()):
+            if i == self.position:
+                self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
+                if self.telex and self.focused:
+                    self.telex.print(line)
+            else:
+                self.win.addstr(i+1,0,line[:max_x])
     
     def get_list(self):
         return self.lst
@@ -175,7 +223,9 @@ class ListComposer(Paginator):
         if key == "a":
             self.view = "absolute"
         if key == "x":
-            del self.fullpathlst[self.page * self.get_nlines() + self.position]
+            pos = self.get_abs_pos()
+            if pos >= 0 and pos < len(self.fullpathlst):
+                del self.fullpathlst[self.page * self.get_nlines() + self.position]
             self.draw()
         if key == "s":
             random.shuffle(self.fullpathlst)
@@ -203,9 +253,10 @@ class CommandLine:
     def set_source(self,source):
         self.source = source
     def print(self,string):
+        _,cols = self.screen.getmaxyx();
         self.screen.move(self.get_y(),0)
         self.screen.clrtoeol()
-        self.screen.addstr(string)       
+        self.screen.addstr(string.encode(encoding="utf-8")[:cols-1])
     def parse_command(self):
         self.screen.move(self.get_y(),0)
         self.screen.clrtoeol()
@@ -215,21 +266,32 @@ class CommandLine:
         if commandandarg[0] == "w":
             self.print("Write command entered")
             
-            if len(commandandarg) == 2:
+            if len(commandandarg) == 2 and commandandarg[1] != "":
                 f = open(commandandarg[1],"w")
                 for line in self.source.get_list():
                     line = line.replace("/","\\")
                     f.write("%s\r\n" % line)
                 f.close()
+        if commandandarg[0] == "l":
+            if len(commandandarg) == 2:
+                f =open(commandandarg[1],"r")
+                for line in f:
+                    lst = []
+                    fullpath = os.path.abspath(line)
+                    lst.append(fullpath)
+                self.source.fullpathlst = lst
+                f.close()
+
         if commandandarg[0] == "q":
             curses.endwin()
             exit(0)
 def main(stdscr):
     
-    curses.init_pair(1,curses.COLOR_YELLOW,curses.COLOR_BLUE)
-    curses.init_pair(2,curses.COLOR_GREEN,curses.COLOR_BLACK) 
-    win1 = curses.newwin(curses.LINES-1,curses.COLS // 2,0,0)
-    win2 = curses.newwin(curses.LINES-1,curses.COLS //2,0,curses.COLS//2)
+    curses.init_pair(1,curses.COLOR_YELLOW, curses.COLOR_BLUE)
+    curses.init_pair(2,curses.COLOR_GREEN, curses.COLOR_BLACK)
+    curses.init_pair(3,curses.COLOR_CYAN, curses.COLOR_BLACK)
+    win1 = curses.newwin(curses.LINES-1, curses.COLS // 2,0,0)
+    win2 = curses.newwin(curses.LINES-1, curses.COLS //2,0,curses.COLS//2)
     
     
     win1.box('*','*')
@@ -239,6 +301,10 @@ def main(stdscr):
     pag2.set_source(pag1)
     cl = CommandLine(stdscr)
     cl.set_source(pag2)
+    pag1.telex = cl
+    pag2.telex = cl
+    pag1.focused = True
+    pag2.focused = False
     for pag in Paginator.paginators:
         pag.draw()
     stdscr.refresh()
@@ -248,6 +314,9 @@ def main(stdscr):
     
     elements = [pag1,pag2,cl]
     selected = pag1
+    pag1.focused = True
+    pag2.focused = False
+    prev_selected = selected
     while True:
         #key = stdscr.getch()
         
@@ -277,18 +346,29 @@ def main(stdscr):
         if key == curses.KEY_LEFT:
             if selected == win2:
                 selected = win1
-        """""       
-               
+        """""              
         if selected == cl:
-            cl.print("command line selected")
-            os.chdir(pag1.dir)
-            cl.parse_command()
+            if selected != prev_selected:
+                cl.print("command line selected")
+                try:
+                    os.chdir(pag1.dir)
+                except:
+                    cl.print("dir not found")
+                cl.parse_command()
         if selected == pag1:
-            cl.print("win1 selected")
+            if prev_selected != selected:
+                cl.print("win1 selected")
+            pag1.focused = True
+            pag2.focused = False
             pag1.process_key(key)
         if selected == pag2: 
-            cl.print("win2 selected")
+            if prev_selected != selected:
+                cl.print("win2 selected")
+            pag1.focused = False
+            pag2.focused = True
             pag2.process_key(key)
+        prev_selected = selected
+
         pag1.draw()
         pag2.draw()
         win1.refresh()
