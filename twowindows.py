@@ -14,15 +14,20 @@ class Paginator:
         self.page = 0
         Paginator.paginators.append(self)
         self.focused = False
-    
+        self.abs_pos = 0
+
+
     def get_nlines(self):
         y,x = self.win.getmaxyx()
         return y - 2
 
     def get_page(self):
-        begin = self.page * self.get_nlines();
+        begin = self.page * self.get_nlines()
         return self.lst[begin:begin  + self.get_nlines()]
-    
+    def set_page_and_position(self):
+        self.page = self.abs_pos // self.get_nlines()
+        self.position = self.abs_pos % self.get_nlines()
+
     def get_selected(self):
         begin = self.page *  self.get_nlines()
         return self.lst[begin+self.position]
@@ -77,10 +82,34 @@ class DirectoryListing(Paginator):
         self.pos_stack = []
         self.modus = "d"
         self.refresh = True
+        self.abs_pos = 0
 
     def get_selected_full_path(self):
         begin = self.page * self.get_nlines()
         return self.full_path_list[begin + self.position]
+
+    def sort_alphabetically(self):
+        self.full_path_list.sort(key=lambda p: os.path.basename(p).lower())
+
+    def traverse_list(self,prefix):
+        counter = 0
+        for i,c in enumerate(prefix):
+            while c < self[counter][i]:
+                counter += 1
+        return counter
+
+    def traverse_by_char(self,char,n):
+        adder = 0
+        for v in self.lst[self.abs_pos:]:
+            self.telex.print(v)
+            if len(v) < n+1:
+                continue
+            elif v[n].casefold() < char.casefold():
+                adder += 1
+            else:
+                break
+        self.abs_pos += adder
+        self.set_page_and_position()
 
 
 
@@ -106,6 +135,24 @@ class DirectoryListing(Paginator):
             if key == "KEY_RIGHT":
                 self.dest.fullpathlst.append(self.get_selected_full_path())
                 self.dest.set_lst()
+            if key == "s":
+                self.sort_alphabetically()
+                self.set_list([os.path.basename(p) for p in self.full_path_list])
+            if key == "f":
+                counter = 0
+                self.abs_pos = 0
+                self.set_page_and_position()
+                while key != "\n" and key != "\r":
+                    key = self.telex.get_key()
+                    
+                    self.traverse_by_char(key,counter)
+                    print("page %d" % self.page)
+                    print("position %d" % self.position)
+                    self.draw()
+                    counter += 1
+
+
+
 
         
         if self.modus == "d":
@@ -163,7 +210,7 @@ class DirectoryListing(Paginator):
         self.win.box("*","*")
         _, max_x = self.win.getmaxyx()
         for i,line in enumerate(self.get_page()):
-            print("number of line" + str(i))
+            # print("number of line" + str(i))
             if i == self.position:
                 self.win.addstr(i+1,0,line[:max_x],curses.color_pair(1))
                 if self.telex and self.focused:
@@ -257,6 +304,8 @@ class CommandLine:
         self.screen.move(self.get_y(),0)
         self.screen.clrtoeol()
         self.screen.addstr(string.encode(encoding="utf-8")[:cols-1])
+    def get_key(self):
+        return self.screen.getkey()
     def parse_command(self):
         self.screen.move(self.get_y(),0)
         self.screen.clrtoeol()
