@@ -58,19 +58,53 @@ class Paginator:
     
 
 
-def get_all_music_files(direc):
+
+def get_all_ext_files(direc,exts):
     res = []
     for file in os.listdir(direc):
         fullpath = os.path.join(direc,file)
         #print(fullpath)
         if os.path.isdir(fullpath) and os.access(fullpath,os.R_OK):
-            res += get_all_music_files(fullpath)
+            res += get_all_ext_files(fullpath,exts)
         elif os.path.isfile(fullpath):
             _,ext = os.path.splitext(fullpath)
-            if ext in [".mp3",".m4a"]:
+            if ext in exts:
                 res.append(fullpath)
 
     return res
+
+
+def get_all_music_files(direc):
+    return get_all_ext_files(direc,[".mp3", ".m4a", ".ogg"])
+
+def get_all_playlist_files(direc):
+    return get_all_ext_files(direc,[".m3u",".old"])
+
+def get_playlist(fullpath,direc):
+    res = []
+    f = open(fullpath,"r")
+    for line in f:
+        line = line.strip()
+        musicfilepath = os.path.join(direc,line)
+        res.append(musicfilepath)
+    return res
+
+def get_playlist_corrected(fullpath,direc):
+    f = open(fullpath,"r")
+    lines = [line.strip() for line in f]
+    fullpathlst = []
+    for line in lines:
+        found = False
+        for root,directories,files in os.walk(direc):
+            if found == True:
+                break
+            for file in files:
+                if file == line:
+                    fullpathlst.append(os.path.join(root,file))
+                    found = True #stop after finding first matching file
+                    break
+    return fullpathlst
+
 
 class DirectoryListing(Paginator):
     def __init__(self,win,dest,dir):
@@ -83,6 +117,7 @@ class DirectoryListing(Paginator):
         self.modus = "d"
         self.refresh = True
         self.abs_pos = 0
+        self.playlistflag = False
 
     def get_selected_full_path(self):
         begin = self.page * self.get_nlines()
@@ -91,7 +126,7 @@ class DirectoryListing(Paginator):
     def sort_alphabetically(self):
         self.full_path_list.sort(key=lambda p: os.path.basename(p).lower())
 
-    def traverse_list(self,prefix):
+    def traverse_list(self, prefix):
         counter = 0
         for i,c in enumerate(prefix):
             while c < self[counter][i]:
@@ -112,7 +147,15 @@ class DirectoryListing(Paginator):
         self.set_page_and_position()
 
 
+    def update_files(self):
+                if self.playlistflag is True:
+                    self.full_path_list = get_all_playlist_files(self.dir)
+                else:
+                    self.full_path_list = get_all_music_files(self.dir)
+                self.set_list([os.path.basename(p) for p in self.full_path_list])
+                self.refresh = False
 
+            #self.dest.fullpathlst.append(musicfilepath)
     def process_key(self,key):
         super().process_key(key)
         if key == "m":
@@ -125,29 +168,56 @@ class DirectoryListing(Paginator):
         
 
         if self.modus == "a":
-            if self.refresh:
-                self.full_path_list = get_all_music_files(self.dir)
-                self.set_list([os.path.basename(p) for p in self.full_path_list])
+            if self.refresh is True:
+                self.update_files()
                 self.refresh = False
-                if self.telex and self.focused:
-                    self.telex.print(str(len(self.lst)))
+
+
+            if self.telex and self.focused:
+                self.telex.print(str(len(self.lst)))
                 print(len(self.lst))
             if key == "KEY_RIGHT":
-                self.dest.fullpathlst.append(self.get_selected_full_path())
+                
+                if self.playlistflag is False:
+                    self.dest.fullpathlst.append(self.get_selected_full_path())
+                else:
+                    self.dest.fullpathlst += get_playlist(self.get_selected_full_path(),self.dir)
+                
                 self.dest.set_lst()
+            if key == "c":
+                self.dest.fullpathlst += get_playlist_corrected(self.get_selected_full_path(),self.dir)
+                self.dest.set_lst()
+
+            if key == "r":
+                random.shuffle(self.full_path_list)
+                self.set_list([os.path.basename(p) for p in self.full_path_list])
+
             if key == "s":
                 self.sort_alphabetically()
                 self.set_list([os.path.basename(p) for p in self.full_path_list])
+            if key  == "p":
+                self.playlistflag = not self.playlistflag
+                self.update_files()
+            if key == "x":
+                fullpath = self.get_selected_full_path()
+                if fullpath.endswith(".m3u"):
+                    os.rename(fullpath,fullpath+".old")
+                elif fullpath.endswith(".m3u.old"):
+                    os.rename(fullpath,fullpath.removesuffix(".old"))
+                self.update_files()
+                self.set_list([os.path.basename(p) for p in self.full_path_list])
+
             if key == "f":
                 counter = 0
                 self.abs_pos = 0
                 self.set_page_and_position()
-                while key != "\n" and key != "\r":
+                while True:
                     key = self.telex.get_key()
-                    
+                    if key == "\n" or key == "\r":
+                        break
                     self.traverse_by_char(key,counter)
-                    print("page %d" % self.page)
-                    print("position %d" % self.position)
+                    #print("page %d" % self.page)
+                    #print("position %d" % self.position)
                     self.draw()
                     counter += 1
 
@@ -159,6 +229,8 @@ class DirectoryListing(Paginator):
             if self.refresh:
                 self.set_list(os.listdir(self.dir))
                 self.refresh = False
+                self.abs_pos = 0
+                self.set_page_and_position()
             if key == "s":
                 fullpath = os.path.join(self.dir,self.get_selected())
                 if fullpath.endswith(".m3u"):
@@ -166,6 +238,30 @@ class DirectoryListing(Paginator):
                 elif fullpath.endswith(".m3u.old"):
                     os.rename(fullpath,fullpath.removesuffix(".old"))
                 self.set_list(os.listdir(self.dir))
+            
+            if key == "f":
+                fullpath = os.path.join(self.dir,self.get_selected())
+                if os.path.isfile(fullpath) and fullpath.endswith(".m3u"):
+                    f = open(fullpath,"r")
+                lines = [line.strip() for line in f]
+                fullpathlst = []
+                for line in lines:
+                    found = False
+                    for root,directories,files in os.walk(self.dir):
+                        if found == True:
+                            break
+                        for file in files:
+                            if file == line:
+                                fullpathlst.append(os.path.join(root,file))
+                                found = True #stop after finding first matching file
+                                break
+                self.dest.fullpathlst += fullpathlst
+                #self.dest.fullpathlst.append("test")
+                self.dest.set_lst()
+
+
+
+
             if key == "l" or key == "a":
                 fullpath = os.path.join(self.dir,self.get_selected())
                 if os.path.isfile(fullpath) and fullpath.endswith(".m3u"):
@@ -346,7 +442,16 @@ def main(stdscr):
     win1.box('*','*')
     win2.box('|','|')
     pag2 = ListComposer(win2)
-    pag1 = DirectoryListing(win1,pag2,Path.cwd())
+        
+    try:
+        path = Path.cwd()
+    except:
+        path = "/"
+    
+        
+
+
+    pag1 = DirectoryListing(win1,pag2,path)
     pag2.set_source(pag1)
     cl = CommandLine(stdscr)
     cl.set_source(pag2)
